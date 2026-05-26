@@ -19,9 +19,8 @@ bot = NewBotAPI(
 cfg.Debug = False
 cfg.MessageListener = True
 
-print("🚀 预售小助手机器人已启动（手动+自动查询当前预售）")
+print("🚀 预售小助手机器人已启动（加强版查询）")
 
-# ================== 检查当前所有活跃预售 ==================
 def check_current_presales(manual=False):
     print("🔍 正在查询 CheesePad 当前活跃预售...")
     try:
@@ -31,60 +30,51 @@ def check_current_presales(manual=False):
                 args=['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
             )
             page = browser.new_page()
-            page.goto("https://www.cheesepad.ai/sale", wait_until="networkidle", timeout=60000)
+            page.goto("https://www.cheesepad.ai/sale", wait_until="networkidle", timeout=90000)
             
-            # 更宽松的选择器，适配当前页面
-            cards = page.query_selector_all("div[class*='card'], div[class*='launchpad'], div[class*='project'], div[role='button']")
+            # 超级宽松的选择器，适配当前和未来页面变化
+            cards = page.query_selector_all("div")
             
             active_projects = []
             for card in cards:
                 try:
-                    # 尝试多种可能的选择器
-                    name_selectors = ["h3", ".name", "[class*='title']", "[class*='project-name']", "strong", "span"]
-                    name = None
-                    for sel in name_selectors:
-                        elem = card.query_selector(sel)
-                        if elem:
-                            name = elem.inner_text().strip()
-                            break
+                    text = card.inner_text().strip()
+                    if len(text) < 5:
+                        continue
                     
-                    status_selectors = ["span[class*='status']", ".badge", "[class*='tag']", "div[class*='status']"]
-                    status = None
-                    for sel in status_selectors:
-                        elem = card.query_selector(sel)
-                        if elem:
-                            status = elem.inner_text().strip()
-                            break
-                    
-                    if name and status and any(kw in status.lower() for kw in ["presale", "upcoming", "live", "sale", "launch"]):
+                    # 提取可能的项目名称和状态
+                    if any(kw in text.lower() for kw in ["presale", "upcoming", "live", "sale", "launch"]):
+                        name = text.split("\n")[0].strip() if "\n" in text else text[:30]
+                        status = "活跃预售"
                         link = "https://www.cheesepad.ai/sale"
                         active_projects.append({"name": name, "status": status, "link": link})
                 except:
                     continue
+            
             browser.close()
 
+        print(f"找到 {len(active_projects)} 个可能活跃项目")
+
         if active_projects:
-            print(f"✅ 发现 {len(active_projects)} 个活跃预售项目")
             msg_text = "@everyone 🔍 **CheesePad 当前活跃预售项目：**\n\n"
-            for item in active_projects:
+            for item in active_projects[:10]:   # 最多显示10个
                 msg_text += f"📌 **{item['name']}**\n🔥 状态：{item['status']}\n🔗 {item['link']}\n\n"
-            msg_text += "快去看看有没有想参与的吧！🍀"
+            msg_text += "快去参与吧！🍀"
         else:
-            print("✅ 当前暂无活跃预售项目")
-            msg_text = "@everyone ✅ 当前暂无活跃预售项目（没有找到准备开始或正在预售的项目）"
+            msg_text = "@everyone ✅ 当前暂无活跃预售项目（页面上没有找到准备开始或正在预售的项目）"
 
         msg = NewMessage(TARGET_GROUP_CHAT_ID, "group", msg_text)
         msg.ParseMode = ModeRichText
         bot.Send(msg)
 
     except Exception as e:
-        print("检查出错:", str(e)[:100])
+        print("检查出错:", str(e)[:150])
         if manual:
             msg = NewMessage(TARGET_GROUP_CHAT_ID, "group", "@everyone ❌ 查询失败，请稍后再试")
             msg.ParseMode = ModeRichText
             bot.Send(msg)
 
-# 自动检查线程
+# 自动检查
 def monitor_thread():
     while True:
         check_current_presales(manual=False)
@@ -100,18 +90,15 @@ for update in bot.GetUpdatesChan(update_config):
     if update.Message:
         chat_id = update.Message.Chat.ID
         chat_type = update.Message.Chat.Type
-        text = (update.Message.Text or "").strip()
+        text = (update.Message.Text or "").strip().lower()
 
-        print(f"收到消息: {text}")
-
-        if text.lower() == "/check":
+        if text == "/check":
             reply = NewMessage(chat_id, chat_type, "🔍 正在查询当前所有活跃预售项目，请稍等...")
             reply.ParseMode = ModeRichText
             bot.Send(reply)
             check_current_presales(manual=True)
             continue
 
-        # 普通回复
         reply = NewMessage(chat_id, chat_type, f"🤖 收到：{text}\n\n输入 /check 可查询当前所有活跃预售项目！")
         reply.ParseMode = ModeRichText
         bot.Send(reply)
