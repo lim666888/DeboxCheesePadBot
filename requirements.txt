@@ -1,1 +1,2 @@
 playwright
+git+https://github.com/debox-pro/debox-chat-python-sdk.git
