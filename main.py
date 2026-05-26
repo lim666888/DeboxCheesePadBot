@@ -11,9 +11,7 @@ os.environ["DEBOX_BOT_API_KEY"] = os.getenv("DEBOX_BOT_API_KEY")
 os.environ["DEBOX_BOT_API_SECRET"] = os.getenv("DEBOX_BOT_API_SECRET")
 
 TARGET_GROUP_CHAT_ID = "c8wm9ddj"
-CHECK_INTERVAL = 300
-
-SEEN_FILE = "seen_presales.json"
+CHECK_INTERVAL = 300   # 自动检查间隔（秒），5分钟=300，可改成180就是3分钟
 
 bot = NewBotAPI(
     os.getenv("DEBOX_BOT_API_KEY"),
@@ -23,20 +21,10 @@ bot = NewBotAPI(
 cfg.Debug = False
 cfg.MessageListener = True
 
-def load_seen():
-    if os.path.exists(SEEN_FILE):
-        with open(SEEN_FILE, "r", encoding="utf-8") as f:
-            return set(json.load(f))
-    return set()
+print("🚀 预售小助手机器人已启动（自动+手动混合模式）")
 
-seen_presales = load_seen()
-
-def save_seen():
-    with open(SEEN_FILE, "w", encoding="utf-8") as f:
-        json.dump(list(seen_presales), f, ensure_ascii=False)
-
+# ================== CheesePad 检查函数 ==================
 def check_new_presales():
-    global seen_presales
     print("🔍 正在检查 CheesePad 新预售...")
     try:
         with sync_playwright() as p:
@@ -56,11 +44,9 @@ def check_new_presales():
                     name = card.query_selector("h3, .name, [class*='title']").inner_text().strip()
                     status = card.query_selector("span[class*='status'], .badge").inner_text().strip()
                     link = "https://www.cheesepad.ai/sale"
+                    
                     if any(kw in (status or "").lower() for kw in ["presale", "upcoming", "live", "sale", "launch"]):
-                        key = f"{name}-{status}"
-                        if key not in seen_presales:
-                            seen_presales.add(key)
-                            new_found.append({"name": name, "status": status, "link": link})
+                        new_found.append({"name": name, "status": status, "link": link})
                 except:
                     continue
             browser.close()
@@ -68,22 +54,28 @@ def check_new_presales():
         if new_found:
             print(f"🚨 发现 {len(new_found)} 个新预售！")
             for item in new_found:
-                msg = NewMessage(TARGET_GROUP_CHAT_ID, "group", f"🚨 **CheesePad 新预售上线！**\n\n📌 项目：**{item['name']}**\n🔥 状态：{item['status']}\n🔗 链接：{item['link']}\n\n快去参与吧！🍀")
+                msg = NewMessage(
+                    TARGET_GROUP_CHAT_ID, "group",
+                    f"🚨 **CheesePad 新预售上线！**\n\n"
+                    f"📌 项目：**{item['name']}**\n"
+                    f"🔥 状态：{item['status']}\n"
+                    f"🔗 链接：{item['link']}\n\n"
+                    f"快去参与吧！🍀"
+                )
                 msg.ParseMode = ModeRichText
                 bot.Send(msg)
-            save_seen()
         else:
             print("✅ 暂无新预售")
     except Exception as e:
         print("检查出错（可忽略）:", str(e)[:100])
 
+# ================== 自动监控线程 ==================
 def monitor_thread():
     while True:
         check_new_presales()
         time.sleep(CHECK_INTERVAL)
 
-print("🚀 预售小助手机器人已启动（CheesePad 监控已开启）")
-
+# ================== 主消息循环 ==================
 threading.Thread(target=monitor_thread, daemon=True).start()
 
 update_config = NewUpdate(0)
@@ -94,7 +86,18 @@ for update in bot.GetUpdatesChan(update_config):
         chat_id = update.Message.Chat.ID
         chat_type = update.Message.Chat.Type
         text = update.Message.Text or ""
+
         print(f"收到消息: {text}")
-        reply = NewMessage(chat_id, chat_type, f"🤖 收到：{text}\nCheesePad监控运行中...")
+
+        # 手动触发
+        if text.strip().lower() == "/check":
+            reply = NewMessage(chat_id, chat_type, "🔍 正在手动检查 CheesePad 新预售，请稍等...")
+            reply.ParseMode = ModeRichText
+            bot.Send(reply)
+            check_new_presales()
+            continue
+
+        # 普通回复
+        reply = NewMessage(chat_id, chat_type, f"🤖 收到：{text}\n\n输入 /check 可立即检查 CheesePad 新预售！")
         reply.ParseMode = ModeRichText
         bot.Send(reply)
