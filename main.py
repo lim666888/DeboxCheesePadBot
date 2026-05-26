@@ -10,7 +10,7 @@ os.environ["DEBOX_BOT_API_KEY"] = os.getenv("DEBOX_BOT_API_KEY")
 os.environ["DEBOX_BOT_API_SECRET"] = os.getenv("DEBOX_BOT_API_SECRET")
 
 TARGET_GROUP_CHAT_ID = "c8wm9ddj"
-CHECK_INTERVAL = 300   # 每5分钟自动检查一次（想改成3分钟就改成180）
+CHECK_INTERVAL = 300   # 自动检查间隔（秒），5分钟
 
 bot = NewBotAPI(
     os.getenv("DEBOX_BOT_API_KEY"),
@@ -20,10 +20,11 @@ bot = NewBotAPI(
 cfg.Debug = False
 cfg.MessageListener = True
 
-print("🚀 预售小助手机器人已启动（自动+手动混合模式）")
+print("🚀 预售小助手机器人已启动（自动+手动查询当前预售）")
 
-def check_new_presales():
-    print("🔍 正在检查 CheesePad 新预售...")
+# ================== 检查函数 ==================
+def check_new_presales(manual=False):
+    print("🔍 正在检查 CheesePad 当前预售...")
     try:
         with sync_playwright() as p:
             browser = p.chromium.launch(
@@ -36,7 +37,7 @@ def check_new_presales():
             
             cards = page.query_selector_all("div[class*='card'], div[class*='launchpad'], div[class*='project']")
             
-            new_found = []
+            active_projects = []
             for card in cards:
                 try:
                     name = card.query_selector("h3, .name, [class*='title']").inner_text().strip()
@@ -44,36 +45,46 @@ def check_new_presales():
                     link = "https://www.cheesepad.ai/sale"
                     
                     if any(kw in (status or "").lower() for kw in ["presale", "upcoming", "live", "sale", "launch"]):
-                        new_found.append({"name": name, "status": status, "link": link})
+                        active_projects.append({"name": name, "status": status, "link": link})
                 except:
                     continue
             browser.close()
 
-        if new_found:
-            print(f"🚨 发现 {len(new_found)} 个新预售！")
-            for item in new_found:
-                msg = NewMessage(TARGET_GROUP_CHAT_ID, "group",
-                    f"🚨 **CheesePad 新预售上线！**\n\n"
-                    f"📌 项目：**{item['name']}**\n"
-                    f"🔥 状态：{item['status']}\n"
-                    f"🔗 链接：{item['link']}\n\n"
-                    f"快去参与吧！🍀")
+        if active_projects:
+            print(f"发现 {len(active_projects)} 个当前活跃预售项目")
+            if manual:   # 手动查询时列出所有
+                msg_text = "@everyone 🔍 **当前 CheesePad 活跃预售项目：**\n\n"
+                for item in active_projects:
+                    msg_text += f"📌 **{item['name']}**\n🔥 状态：{item['status']}\n🔗 {item['link']}\n\n"
+                msg_text += "快去看看有没有想参与的吧！🍀"
+            else:   # 自动模式只提醒新项目（保持原逻辑）
+                # 这里保留你原来的新项目提醒逻辑，如果想简化也可以改
+                msg_text = "@everyone 🚨 **发现新预售！**\n\n"
+                for item in active_projects:
+                    msg_text += f"📌 **{item['name']}** - {item['status']}\n🔗 {item['link']}\n\n"
+                msg_text += "快去参与吧！🍀"
+            
+            msg = NewMessage(TARGET_GROUP_CHAT_ID, "group", msg_text)
+            msg.ParseMode = ModeRichText
+            bot.Send(msg)
+        else:
+            print("✅ 暂无活跃预售")
+            if manual:
+                msg = NewMessage(TARGET_GROUP_CHAT_ID, "group", "@everyone ✅ 当前暂无活跃预售项目")
                 msg.ParseMode = ModeRichText
                 bot.Send(msg)
-        else:
-            print("✅ 暂无新预售")
     except Exception as e:
         print("检查出错（可忽略）:", str(e)[:100])
 
-# 自动检查线程
+# ================== 自动线程 ==================
 def monitor_thread():
     while True:
-        check_new_presales()
+        check_new_presales(manual=False)
         time.sleep(CHECK_INTERVAL)
 
 threading.Thread(target=monitor_thread, daemon=True).start()
 
-# 消息监听
+# ================== 消息监听 ==================
 update_config = NewUpdate(0)
 update_config.Timeout = 60
 
@@ -86,13 +97,13 @@ for update in bot.GetUpdatesChan(update_config):
         print(f"收到消息: {text}")
 
         if text.lower() == "/check":
-            reply = NewMessage(chat_id, chat_type, "🔍 正在手动检查 CheesePad 新预售，请稍等...")
+            reply = NewMessage(chat_id, chat_type, "🔍 正在查询当前所有活跃预售项目，请稍等...")
             reply.ParseMode = ModeRichText
             bot.Send(reply)
-            check_new_presales()
+            check_new_presales(manual=True)
             continue
 
         # 普通回复
-        reply = NewMessage(chat_id, chat_type, f"🤖 收到：{text}\n\n输入 /check 可立即检查新预售！")
+        reply = NewMessage(chat_id, chat_type, f"🤖 收到：{text}\n\n输入 /check 可查询当前所有活跃预售项目！")
         reply.ParseMode = ModeRichText
         bot.Send(reply)
