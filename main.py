@@ -6,12 +6,11 @@ from boxbotapi import NewBotAPI, NewMessage, NewUpdate, ModeRichText
 from boxbotapi import configs as cfg
 from playwright.sync_api import sync_playwright
 
-# ================== 配置 ==================
 os.environ["DEBOX_BOT_API_KEY"] = os.getenv("DEBOX_BOT_API_KEY")
 os.environ["DEBOX_BOT_API_SECRET"] = os.getenv("DEBOX_BOT_API_SECRET")
 
 TARGET_GROUP_CHAT_ID = "c8wm9ddj"
-CHECK_INTERVAL = 300   # 自动检查间隔（秒），5分钟=300，可改成180就是3分钟
+CHECK_INTERVAL = 300   # 每5分钟自动检查一次（想改成3分钟就改成180）
 
 bot = NewBotAPI(
     os.getenv("DEBOX_BOT_API_KEY"),
@@ -23,7 +22,6 @@ cfg.MessageListener = True
 
 print("🚀 预售小助手机器人已启动（自动+手动混合模式）")
 
-# ================== CheesePad 检查函数 ==================
 def check_new_presales():
     print("🔍 正在检查 CheesePad 新预售...")
     try:
@@ -54,14 +52,12 @@ def check_new_presales():
         if new_found:
             print(f"🚨 发现 {len(new_found)} 个新预售！")
             for item in new_found:
-                msg = NewMessage(
-                    TARGET_GROUP_CHAT_ID, "group",
+                msg = NewMessage(TARGET_GROUP_CHAT_ID, "group",
                     f"🚨 **CheesePad 新预售上线！**\n\n"
                     f"📌 项目：**{item['name']}**\n"
                     f"🔥 状态：{item['status']}\n"
                     f"🔗 链接：{item['link']}\n\n"
-                    f"快去参与吧！🍀"
-                )
+                    f"快去参与吧！🍀")
                 msg.ParseMode = ModeRichText
                 bot.Send(msg)
         else:
@@ -69,15 +65,15 @@ def check_new_presales():
     except Exception as e:
         print("检查出错（可忽略）:", str(e)[:100])
 
-# ================== 自动监控线程 ==================
+# 自动检查线程
 def monitor_thread():
     while True:
         check_new_presales()
         time.sleep(CHECK_INTERVAL)
 
-# ================== 主消息循环 ==================
 threading.Thread(target=monitor_thread, daemon=True).start()
 
+# 消息监听
 update_config = NewUpdate(0)
 update_config.Timeout = 60
 
@@ -85,12 +81,11 @@ for update in bot.GetUpdatesChan(update_config):
     if update.Message:
         chat_id = update.Message.Chat.ID
         chat_type = update.Message.Chat.Type
-        text = update.Message.Text or ""
+        text = (update.Message.Text or "").strip()
 
         print(f"收到消息: {text}")
 
-        # 手动触发
-        if text.strip().lower() == "/check":
+        if text.lower() == "/check":
             reply = NewMessage(chat_id, chat_type, "🔍 正在手动检查 CheesePad 新预售，请稍等...")
             reply.ParseMode = ModeRichText
             bot.Send(reply)
@@ -98,6 +93,6 @@ for update in bot.GetUpdatesChan(update_config):
             continue
 
         # 普通回复
-        reply = NewMessage(chat_id, chat_type, f"🤖 收到：{text}\n\n输入 /check 可立即检查 CheesePad 新预售！")
+        reply = NewMessage(chat_id, chat_type, f"🤖 收到：{text}\n\n输入 /check 可立即检查新预售！")
         reply.ParseMode = ModeRichText
         bot.Send(reply)
